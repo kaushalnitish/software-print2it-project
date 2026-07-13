@@ -1,0 +1,6 @@
+{
+  "name": "PrintFlow Agent v2",
+  "description": "Production-grade desktop print agent for automated queue management, Windows native printing, and Supabase database integration.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
