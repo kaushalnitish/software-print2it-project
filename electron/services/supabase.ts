@@ -5,6 +5,7 @@ import { getPrinterService } from './printer';
 import { PrintJob } from '../types';
 import { BrowserWindow } from 'electron';
 import fs from 'fs';
+import crypto from 'crypto';
 
 /**
  * Decodes the pairing code to extract shopId and pairingKey
@@ -67,6 +68,7 @@ export class SupabaseDaemon {
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private activeJobs = new Set<string>(); // Prevent duplicate print executions
   private isInitializing = false;
+  private reconnectTimeout: NodeJS.Timeout | null = null;
 
   private window: BrowserWindow | null = null;
 
@@ -82,10 +84,26 @@ export class SupabaseDaemon {
     }
   }
 
+  private scheduleReconnection() {
+    if (this.reconnectTimeout) return;
+    this.logger.log('info', 'Scheduling reconnection retry in 15 seconds...');
+    this.reconnectTimeout = setTimeout(async () => {
+      this.reconnectTimeout = null;
+      const success = await this.initialize();
+      if (!success) {
+        this.scheduleReconnection();
+      }
+    }, 15000);
+  }
+
   /**
    * Initializes Supabase client using stored credentials
    */
   public async initialize(): Promise<boolean> {
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
     if (this.isInitializing) {
       this.logger.log('info', 'Daemon initialization already in progress, skipping overlapping call.');
       return false;
@@ -113,6 +131,7 @@ export class SupabaseDaemon {
       if (error) {
         this.logger.log('error', 'Supabase connection check failed', error.message);
         this.notifyRenderer('supabase:status', { connected: false, error: error.message });
+        this.scheduleReconnection();
         return false;
       }
 
@@ -125,6 +144,7 @@ export class SupabaseDaemon {
     } catch (err) {
       this.logger.log('error', 'Exception in SupabaseDaemon init', String(err));
       this.notifyRenderer('supabase:status', { connected: false, error: String(err) });
+      this.scheduleReconnection();
       return false;
     } finally {
       this.isInitializing = false;
@@ -138,7 +158,7 @@ export class SupabaseDaemon {
     pairingCode: string, 
     supabaseUrl: string, 
     supabaseAnonKey: string
-  ): Promise<{ success: boolean; shopName?: string; shopId?: string; pairingKey?: string; error?: string }> {
+  ): Promise<{ success: boolean; shopName?: string; shopId?: string; pairingKey?: string; agentToken?: string; error?: string }> {
     try {
       this.logger.log('info', `Attempting pairing verification with Code: ${pairingCode.substring(0, 8)}...`);
       
@@ -176,6 +196,7 @@ export class SupabaseDaemon {
       const shopName = data.name || 'Unnamed Print Shop';
       const resolvedShopId = data.id;
       const resolvedPairingKey = data.pairing_key || pairingKey;
+      const agentToken = crypto.randomBytes(32).toString('hex');
 
       this.logger.log('info', `Successfully verified pairing for: ${shopName} (${resolvedShopId})`);
       
@@ -183,7 +204,8 @@ export class SupabaseDaemon {
         success: true, 
         shopName,
         shopId: resolvedShopId,
-        pairingKey: resolvedPairingKey
+        pairingKey: resolvedPairingKey,
+        agentToken
       };
     } catch (err) {
       this.logger.log('error', 'Exception during pairing verification', String(err));
@@ -208,6 +230,10 @@ export class SupabaseDaemon {
     this.stopHeartbeat();
     this.stopRealtime();
     this.stopPolling();
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
     this.client = null;
     this.logger.log('info', 'Supabase background daemon stopped');
   }
@@ -307,7 +333,7 @@ export class SupabaseDaemon {
         (payload) => {
           this.logger.log('info', 'Realtime event: New print job inserted', payload.new.id);
           const job = payload.new as PrintJob;
-          if (job.status === 'pending') {
+          if (job.status === 'waiting' || job.status === 'pending') {
             this.processJob(job);
           }
         }
@@ -322,8 +348,8 @@ export class SupabaseDaemon {
         },
         (payload) => {
           const job = payload.new as PrintJob;
-          if (job.status === 'pending') {
-            this.logger.log('info', 'Realtime event: Job updated to pending status', job.id);
+          if (job.status === 'waiting' || job.status === 'pending') {
+            this.logger.log('info', `Realtime event: Job updated to ${job.status} status`, job.id);
             this.processJob(job);
           }
         }
@@ -354,7 +380,7 @@ export class SupabaseDaemon {
         .from('print_jobs')
         .select('*')
         .eq('shop_id', settings.shopId)
-        .eq('status', 'pending')
+        .in('status', ['waiting', 'pending'])
         .order('created_at', { ascending: true });
 
       if (error) {

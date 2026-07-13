@@ -145,15 +145,26 @@ export const ElectronProvider: React.FC<{ children: ReactNode }> = ({ children }
         
         // 1. Loading local configuration
         addStartupLog('info', 'Loading local configuration...');
-        let storedSettings = defaultSettings;
+        let storedSettings = { ...defaultSettings };
         const stored = localStorage.getItem('printflow_sim_settings');
         if (stored) {
           try {
-            storedSettings = JSON.parse(stored);
+            storedSettings = { ...storedSettings, ...JSON.parse(stored) };
           } catch (e) {
             addStartupLog('warn', 'Failed to parse localStorage settings', String(e));
           }
         }
+
+        // Overwrite with environment variables if provided
+        const envUrl = (import.meta as any).env.VITE_SUPABASE_URL || '';
+        const envKey = (import.meta as any).env.VITE_SUPABASE_ANON_KEY || '';
+        if (envUrl) {
+          storedSettings.supabaseUrl = envUrl;
+        }
+        if (envKey) {
+          storedSettings.supabaseAnonKey = envKey;
+        }
+
         setSettings(storedSettings);
 
         // 2. Loading printer list
@@ -617,7 +628,7 @@ export const ElectronProvider: React.FC<{ children: ReactNode }> = ({ children }
       id: `job_sim_${Math.random().toString(36).substring(2, 9)}`,
       shop_id: settings.shopId,
       file_url: jobProps.file_url || 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
-      status: 'pending',
+      status: 'waiting',
       copies: jobProps.copies || 1,
       paper_size: jobProps.paper_size || 'A4',
       color: jobProps.color !== undefined ? jobProps.color : true,

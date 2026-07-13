@@ -58,7 +58,7 @@ export const PairingWizard: React.FC = () => {
           autoLaunch: true,
           minimizeToTray: true,
           isPaired: true,
-          agentToken: result.pairingKey || pairingCode.trim(),
+          agentToken: result.agentToken || result.pairingKey || pairingCode.trim(),
         });
         
         // 3. Set Windows Startup parameter

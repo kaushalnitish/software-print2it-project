@@ -9,7 +9,7 @@ export interface PrintJob {
   id: string;
   shop_id: string;
   file_url: string;
-  status: 'pending' | 'printing' | 'completed' | 'failed';
+  status: 'waiting' | 'pending' | 'printing' | 'completed' | 'failed';
   copies: number;
   paper_size: string;
   color: boolean;

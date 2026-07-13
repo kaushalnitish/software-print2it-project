@@ -74,7 +74,7 @@ export const Dashboard: React.FC = () => {
         .from('print_jobs')
         .select('*')
         .eq('shop_id', settings.shopId)
-        .eq('status', 'pending');
+        .in('status', ['waiting', 'pending']);
 
       if (!error && data) {
         setDbJobs(data as PrintJob[]);
