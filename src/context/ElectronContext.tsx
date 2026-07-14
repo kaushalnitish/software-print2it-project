@@ -382,6 +382,8 @@ export const ElectronProvider: React.FC<{ children: ReactNode }> = ({ children }
     addSimulatedLog('info', 'Connecting background agent to Supabase...', settings.supabaseUrl);
     setRealtimeStatus('Connecting');
 
+    console.log("Loaded URL:", settings.supabaseUrl);
+    console.log("Loaded Key Present:", !!settings.supabaseAnonKey);
     const client = createClient(settings.supabaseUrl, settings.supabaseAnonKey, {
       auth: { persistSession: false }
     });
@@ -529,6 +531,8 @@ export const ElectronProvider: React.FC<{ children: ReactNode }> = ({ children }
           // ignore
         }
 
+        console.log("Loaded URL:", finalUrl);
+        console.log("Loaded Key Present:", !!finalKey);
         const testClient = createClient(finalUrl, finalKey, { auth: { persistSession: false } });
         
         let query = testClient.from('shops').select('*');

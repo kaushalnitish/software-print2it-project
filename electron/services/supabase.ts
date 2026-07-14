@@ -120,6 +120,8 @@ export class SupabaseDaemon {
         return false;
       }
 
+      console.log("Loaded URL:", settings.supabaseUrl);
+      console.log("Loaded Key Present:", !!settings.supabaseAnonKey);
       this.logger.log('info', 'Initializing Supabase connection', settings.supabaseUrl);
       
       this.client = createClient(settings.supabaseUrl, settings.supabaseAnonKey, {
@@ -165,6 +167,8 @@ export class SupabaseDaemon {
       
       const { shopId, pairingKey } = decodePairingCode(pairingCode);
 
+      console.log("Loaded URL:", supabaseUrl);
+      console.log("Loaded Key Present:", !!supabaseAnonKey);
       const tempClient = createClient(supabaseUrl, supabaseAnonKey, {
         auth: { persistSession: false }
       });

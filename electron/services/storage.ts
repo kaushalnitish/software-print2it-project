@@ -4,14 +4,20 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { app, safeStorage } from 'electron';
 import crypto from 'crypto';
+import fs from 'fs';
 
-// Safely configure dotenv
+// Safely configure dotenv and load local .env files
 try {
-  dotenv.config();
+  dotenv.config({ path: path.join(process.cwd(), '.env'), override: true });
+
   // Also attempt to load .env from the app's standard path
   if (app) {
-    dotenv.config({ path: path.join(app.getAppPath(), '.env') });
-    dotenv.config({ path: path.join(path.dirname(app.getPath('exe')), '.env') });
+    try {
+      dotenv.config({ path: path.join(app.getAppPath(), '.env'), override: true });
+      dotenv.config({ path: path.join(path.dirname(app.getPath('exe')), '.env'), override: true });
+    } catch (e) {
+      // Ignore app-not-ready errors
+    }
   }
 } catch (e) {
   // Ignore errors outside of Electron context or missing files

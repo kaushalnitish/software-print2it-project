@@ -2,6 +2,37 @@ import { app, BrowserWindow, ipcMain, Tray, Menu, shell } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import AutoLaunch from 'auto-launch';
+import dotenv from 'dotenv';
+
+// Configure dotenv to load local .env files
+try {
+  dotenv.config({ path: path.join(process.cwd(), '.env'), override: true });
+
+  if (app) {
+    try {
+      dotenv.config({ path: path.join(app.getAppPath(), '.env'), override: true });
+      dotenv.config({ path: path.join(path.dirname(app.getPath('exe')), '.env'), override: true });
+    } catch (e) {
+      // Ignore app-not-ready errors
+    }
+  }
+} catch (e) {
+  // Ignore
+}
+
+const loadedUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+const loadedKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+
+console.log("Loaded URL:", loadedUrl);
+console.log("Loaded Key Present:", !!loadedKey);
+
+if (!loadedUrl) {
+  console.error("FATAL ERROR: SUPABASE_URL is not configured in the local .env file!");
+  console.error("Please create a .env file containing:");
+  console.error("SUPABASE_URL=https://your-supabase-url.supabase.co");
+  console.error("SUPABASE_ANON_KEY=your-supabase-anon-key");
+  process.exit(1);
+}
 
 import { getStorageService } from '../services/storage';
 import { getLoggingService } from '../services/logging';

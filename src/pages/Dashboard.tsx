@@ -71,6 +71,8 @@ export const Dashboard: React.FC = () => {
     if (!settings.supabaseUrl || !settings.supabaseAnonKey || !settings.shopId) return;
     try {
       setFetchingDb(true);
+      console.log("Loaded URL:", settings.supabaseUrl);
+      console.log("Loaded Key Present:", !!settings.supabaseAnonKey);
       const client = createClient(settings.supabaseUrl, settings.supabaseAnonKey);
       const { data, error } = await client
         .from('print_jobs')
