@@ -50,7 +50,10 @@ export const ElectronProvider: React.FC<{ children: ReactNode }> = ({ children }
   
   // Settings State
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
-  const [printers, setPrinters] = useState<PrinterInfo[]>([]);
+  const [printers, setPrinters] = useState<PrinterInfo[]>([
+    { name: 'Microsoft Print to PDF', isDefault: true },
+    { name: 'Microsoft XPS Document Writer', isDefault: false }
+  ]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [initialized, setInitialized] = useState(false);
   
@@ -120,20 +123,11 @@ export const ElectronProvider: React.FC<{ children: ReactNode }> = ({ children }
         );
         setSettings(storedSettings);
 
-        // 2. Loading printer list
-        addStartupLog('info', 'Loading printer list...');
-        const printerList = await runWithTimeout(
-          async () => await window.electronAPI!.getPrinters(),
-          [] as PrinterInfo[],
-          'Loading printer list'
-        );
-        setPrinters(printerList);
-
         if (storedSettings.isPaired) {
           addStartupLog('info', 'Connecting to Supabase...');
         }
 
-        // 3. Loading existing logs
+        // 2. Loading existing logs
         const logList = await runWithTimeout(
           async () => await window.electronAPI!.getLogs(),
           [] as LogEntry[],
@@ -143,6 +137,59 @@ export const ElectronProvider: React.FC<{ children: ReactNode }> = ({ children }
         // Add all startup logs into the beginning of the loaded logs
         const finalLogs = [...startupLogs, ...logList].slice(0, 500);
         setLogs(finalLogs);
+
+        // 3. Loading printer list asynchronously in the background so it never blocks
+        setTimeout(() => {
+          setLogs((prev) => [
+            {
+              timestamp: new Date().toISOString(),
+              level: 'info',
+              message: 'Printer scan started'
+            },
+            ...prev
+          ].slice(0, 500));
+
+          window.electronAPI!.getPrinters()
+            .then((printerList) => {
+              if (printerList && printerList.length > 0) {
+                setPrinters(printerList);
+                
+                // If paired, and the default printer setting is empty or using a temporary placeholder,
+                // automatically update to the first found printer (or default printer from scan)
+                setSettings((currentSettings) => {
+                  if (currentSettings.isPaired) {
+                    const defaultScan = printerList.find(p => p.isDefault)?.name || printerList[0].name;
+                    if (!currentSettings.defaultPrinter || currentSettings.defaultPrinter === 'Microsoft Print to PDF') {
+                      window.electronAPI!.saveSettings({ defaultPrinter: defaultScan })
+                        .catch((err) => console.error('Failed to auto-update default printer after scan', err));
+                      return { ...currentSettings, defaultPrinter: defaultScan };
+                    }
+                  }
+                  return currentSettings;
+                });
+              }
+              setLogs((prev) => [
+                {
+                  timestamp: new Date().toISOString(),
+                  level: 'info',
+                  message: 'Printer scan finished',
+                  context: `Found ${printerList?.length || 0} printers`
+                },
+                ...prev
+              ].slice(0, 500));
+            })
+            .catch((err) => {
+              setLogs((prev) => [
+                {
+                  timestamp: new Date().toISOString(),
+                  level: 'warn',
+                  message: 'Printer scan finished with errors',
+                  context: String(err)
+                },
+                ...prev
+              ].slice(0, 500));
+            });
+        }, 0);
 
       } else {
         // Browser/Web fallback initialization
@@ -173,7 +220,7 @@ export const ElectronProvider: React.FC<{ children: ReactNode }> = ({ children }
         setSettings(storedSettings);
 
         // 2. Loading printer list
-        addStartupLog('info', 'Loading printer list...');
+        addStartupLog('info', 'Printer scan started');
         const mockPrinters: PrinterInfo[] = [
           { name: 'Microsoft Print to PDF', isDefault: true },
           { name: 'Office Jet Pro 8020 Series', isDefault: false },
@@ -181,6 +228,7 @@ export const ElectronProvider: React.FC<{ children: ReactNode }> = ({ children }
           { name: 'Brother MFC-L2710DW Series', isDefault: false }
         ];
         setPrinters(mockPrinters);
+        addStartupLog('info', 'Printer scan finished');
 
         if (storedSettings.isPaired) {
           addStartupLog('info', 'Connecting to Supabase...');
@@ -482,19 +530,28 @@ export const ElectronProvider: React.FC<{ children: ReactNode }> = ({ children }
 
     // If we're called in the old style: verifyPairing(shopId, pairingKey, url, key)
     if (key !== undefined) {
-      if (isElectron && window.electronAPI) {
-        return await window.electronAPI.verifyPairing(pairingCode, pairingKeyOrUrl, finalUrl, finalKey);
-      }
-    }
-
-    // Single code flow
-    if (key === undefined) {
+      finalUrl = url;
+      finalKey = key;
+    } else if (key === undefined) {
+      // Single code flow
       finalUrl = pairingKeyOrUrl || (import.meta as any).env.VITE_SUPABASE_URL || '';
       finalKey = url || (import.meta as any).env.VITE_SUPABASE_ANON_KEY || '';
     }
 
+    addSimulatedLog('info', 'Pairing verification started');
+
+    let result: { success: boolean; shopName?: string; shopId?: string; pairingKey?: string; agentToken?: string; error?: string };
+
     if (isElectron && window.electronAPI) {
-      return await window.electronAPI.verifyPairing(finalCode, finalUrl, finalKey);
+      try {
+        if (key !== undefined) {
+          result = await window.electronAPI.verifyPairing(pairingCode, pairingKeyOrUrl, finalUrl, finalKey);
+        } else {
+          result = await window.electronAPI.verifyPairing(finalCode, finalUrl, finalKey);
+        }
+      } catch (err) {
+        result = { success: false, error: String(err) };
+      }
     } else {
       // Browser Mock
       try {
@@ -545,32 +602,35 @@ export const ElectronProvider: React.FC<{ children: ReactNode }> = ({ children }
         const { data, error } = await query.maybeSingle();
 
         if (error) {
-          return { success: false, error: error.message };
+          result = { success: false, error: error.message };
+        } else if (!data) {
+          result = { success: false, error: 'Invalid pairing code: Shop not found.' };
+        } else if (decodedShopId && data.pairing_key && data.pairing_key !== decodedPairingKey) {
+          result = { success: false, error: 'Invalid pairing code: Security mismatch.' };
+        } else {
+          const shopName = data.name || 'Retail Print Shop';
+          const resolvedShopId = data.id;
+          const resolvedPairingKey = data.pairing_key || decodedPairingKey;
+
+          result = { 
+            success: true, 
+            shopName,
+            shopId: resolvedShopId,
+            pairingKey: resolvedPairingKey
+          };
         }
-
-        if (!data) {
-          return { success: false, error: 'Invalid pairing code: Shop not found.' };
-        }
-
-        if (decodedShopId && data.pairing_key && data.pairing_key !== decodedPairingKey) {
-          return { success: false, error: 'Invalid pairing code: Security mismatch.' };
-        }
-
-        const shopName = data.name || 'Retail Print Shop';
-        const resolvedShopId = data.id;
-        const resolvedPairingKey = data.pairing_key || decodedPairingKey;
-
-        addSimulatedLog('info', `Successfully paired with ${shopName} (${resolvedShopId}) via agent verification!`);
-        return { 
-          success: true, 
-          shopName,
-          shopId: resolvedShopId,
-          pairingKey: resolvedPairingKey
-        };
       } catch (err) {
-        return { success: false, error: String(err) };
+        result = { success: false, error: String(err) };
       }
     }
+
+    if (result.success) {
+      addSimulatedLog('info', 'Pairing verification success', `Paired with ${result.shopName || 'Shop'}`);
+    } else {
+      addSimulatedLog('error', `Pairing verification failure: ${result.error || 'Unknown error'}`);
+    }
+
+    return result;
   };
 
   const clearPairing = async () => {

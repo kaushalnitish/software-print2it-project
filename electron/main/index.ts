@@ -312,7 +312,18 @@ function registerIpcHandlers() {
 
   // Printer IPC
   ipcMain.handle('printers:get', async () => {
-    return await printer.getPrinters();
+    try {
+      logger.log('info', 'IPC handler printers:get invoked');
+      console.log('IPC handler printers:get invoked');
+      const list = await printer.getPrinters();
+      logger.log('info', `IPC handler printers:get returned ${list.length} printers`);
+      console.log(`IPC handler printers:get returned ${list.length} printers`);
+      return list;
+    } catch (err) {
+      logger.log('error', `IPC handler printers:get error: ${String(err)}`);
+      console.error(`IPC handler printers:get error:`, err);
+      return [];
+    }
   });
 
   ipcMain.handle('print:job', async (_, { job, filePath }: { job: PrintJob; filePath: string }) => {

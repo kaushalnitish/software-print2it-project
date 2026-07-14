@@ -16,7 +16,8 @@ export const PairingWizard: React.FC = () => {
     verifyPairing, 
     saveSettings, 
     toggleAutoLaunch,
-    closeWindow
+    closeWindow,
+    initialized
   } = useElectron();
 
   const [pairingCode, setPairingCode] = useState('');
@@ -26,13 +27,19 @@ export const PairingWizard: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
+  // Fallback printers if no physical printers are available
+  const displayPrinters = printers.length > 0 ? printers : [
+    { name: 'Microsoft Print to PDF', isDefault: true },
+    { name: 'Microsoft XPS Document Writer', isDefault: false }
+  ];
+
   // Auto-select default printer when printers list loads
   useEffect(() => {
-    if (printers.length > 0 && !selectedPrinter) {
-      const defaultP = printers.find(p => p.isDefault)?.name || printers[0].name;
+    if (displayPrinters.length > 0 && !selectedPrinter) {
+      const defaultP = displayPrinters.find(p => p.isDefault)?.name || displayPrinters[0].name;
       setSelectedPrinter(defaultP);
     }
-  }, [printers, selectedPrinter]);
+  }, [printers, selectedPrinter, displayPrinters]);
 
   const handleConnect = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -135,7 +142,7 @@ export const PairingWizard: React.FC = () => {
             <label className="text-[11px] font-bold text-gray-400 flex items-center gap-1">
               <Printer size={11} className="text-gray-500" /> Default Printer Device
             </label>
-            {printers.length === 0 ? (
+            {!initialized ? (
               <div className="flex items-center gap-2 text-[11px] text-amber-400 bg-amber-950/20 border border-amber-900/30 rounded-lg p-2.5">
                 <Loader2 size={12} className="animate-spin shrink-0" /> Scanning local hardware devices...
               </div>
@@ -146,7 +153,7 @@ export const PairingWizard: React.FC = () => {
                 onChange={(e) => setSelectedPrinter(e.target.value)}
                 className="w-full bg-[#080a13] border border-[#232b4d] rounded-lg px-3 py-2 text-xs text-gray-200 focus:outline-none focus:border-cyan-500 transition cursor-pointer"
               >
-                {printers.map((p) => (
+                {displayPrinters.map((p) => (
                   <option key={p.name} value={p.name}>
                     {p.name} {p.isDefault ? '(Default)' : ''}
                   </option>
@@ -167,7 +174,7 @@ export const PairingWizard: React.FC = () => {
             </button>
             <button
               type="submit"
-              disabled={loading || success || !pairingCode.trim() || printers.length === 0}
+              disabled={loading || success || !pairingCode.trim()}
               className="flex-1 flex items-center justify-center gap-1.5 bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 disabled:from-gray-800 disabled:to-gray-800 disabled:text-gray-600 text-white font-bold text-xs py-2.5 rounded-lg shadow-lg transition cursor-pointer"
             >
               {loading ? (

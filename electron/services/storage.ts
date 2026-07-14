@@ -93,6 +93,7 @@ class StorageService {
     const StoreClass: any = (Store as any).default || Store;
     this.store = new StoreClass({
       name: 'printflow_config',
+      projectName: 'printflow-agent-v2',
       // Ensure the store schema is validated
       schema: schema as any,
     });

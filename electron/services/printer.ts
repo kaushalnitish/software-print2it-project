@@ -16,42 +16,65 @@ export class PrinterService {
    * Fetches list of local Windows printers
    */
   public async getPrinters(): Promise<PrinterInfo[]> {
+    this.logger.log('info', 'Printer enumeration: Starting scan for local hardware devices...');
+    console.log('Printer enumeration: Starting scan for local hardware devices...');
+
+    // On non-Windows platforms, immediately return empty array to prevent any hanging or win32 CLI issues
+    if (process.platform !== 'win32') {
+      this.logger.log('info', 'Printer enumeration: Non-Windows platform detected, immediately returning empty array.');
+      console.log('Printer enumeration: Non-Windows platform detected, immediately returning empty array.');
+      return [];
+    }
+
     try {
-      this.logger.log('info', 'Fetching local printers list');
-      
-      let printersList: any[] = [];
-      try {
-        printersList = await pdfToPrinter.getPrinters();
-      } catch (e) {
-        // Fallback for non-Windows or if command fails
-        this.logger.log('warn', 'pdf-to-printer failed to get printers, using fallback list', String(e));
-        printersList = [];
-      }
+      // Wrap the pdfToPrinter call in a strict timeout to ensure it never hangs
+      const getPrintersPromise = pdfToPrinter.getPrinters();
+      const printersList: any[] = await Promise.race([
+        getPrintersPromise,
+        new Promise<any[]>((resolve) => setTimeout(() => {
+          this.logger.log('warn', 'Printer enumeration: pdfToPrinter.getPrinters() timed out after 1500ms.');
+          console.warn('Printer enumeration: pdfToPrinter.getPrinters() timed out after 1500ms.');
+          resolve([]);
+        }, 1500))
+      ]).catch((e) => {
+        this.logger.log('warn', 'Printer enumeration: pdf-to-printer failed to get printers', String(e));
+        console.warn('Printer enumeration: pdf-to-printer failed to get printers', e);
+        return [];
+      });
 
       let defaultPrinterName = '';
       try {
-        const res: any = await pdfToPrinter.getDefaultPrinter();
+        const getDefaultPrinterPromise = pdfToPrinter.getDefaultPrinter();
+        const res: any = await Promise.race([
+          getDefaultPrinterPromise,
+          new Promise<any>((resolve) => setTimeout(() => resolve(''), 1000))
+        ]);
         defaultPrinterName = typeof res === 'string' ? res : (res && res.name) || '';
       } catch (e) {
-        this.logger.log('warn', 'Failed to get default printer, fallback to empty', String(e));
+        this.logger.log('warn', 'Printer enumeration: Failed to get default printer', String(e));
       }
 
-      if (printersList.length === 0) {
-        // If empty, return a simulated/mock default printer so the user has at least one selectable option
-        return [
-          { name: 'Microsoft Print to PDF', isDefault: defaultPrinterName === 'Microsoft Print to PDF' || defaultPrinterName === '' },
-          { name: 'Microsoft XPS Document Writer', isDefault: defaultPrinterName === 'Microsoft XPS Document Writer' },
-          { name: 'OneNote (Desktop)', isDefault: defaultPrinterName === 'OneNote (Desktop)' }
-        ];
+      this.logger.log('info', `Printer enumeration: Found ${printersList.length} physical/system printers.`);
+      console.log(`Printer enumeration: Found ${printersList.length} physical/system printers.`);
+
+      if (!printersList || printersList.length === 0) {
+        this.logger.log('info', 'Printer enumeration: No physical/system printers found. Returning empty array.');
+        console.log('Printer enumeration: No physical/system printers found. Returning empty array.');
+        return [];
       }
 
-      return printersList.map((p) => ({
+      const mapped = printersList.map((p) => ({
         name: p.name || p,
         isDefault: (p.name || p) === defaultPrinterName,
         status: 'Ready'
       }));
+
+      this.logger.log('info', `Printer enumeration completed successfully. Returning ${mapped.length} mapped printers.`);
+      console.log(`Printer enumeration completed successfully. Returning ${mapped.length} mapped printers.`);
+      return mapped;
     } catch (err) {
-      this.logger.log('error', 'Error in getPrinters', String(err));
+      this.logger.log('error', 'Printer enumeration: Unexpected error in getPrinters', String(err));
+      console.error('Printer enumeration: Unexpected error in getPrinters', err);
       return [];
     }
   }
@@ -61,9 +84,16 @@ export class PrinterService {
    */
   public async isNoPrinterInstalled(): Promise<boolean> {
     try {
+      if (process.platform !== 'win32') {
+        return true;
+      }
       let list: any[] = [];
       try {
-        list = await pdfToPrinter.getPrinters();
+        const getPrintersPromise = pdfToPrinter.getPrinters();
+        list = await Promise.race([
+          getPrintersPromise,
+          new Promise<any[]>((resolve) => setTimeout(() => resolve([]), 1500))
+        ]);
       } catch (e) {
         list = [];
       }
