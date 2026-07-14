@@ -3,8 +3,9 @@ import { getStorageService } from './storage';
 import { getLoggingService } from './logging';
 import { getPrinterService } from './printer';
 import { PrintJob } from '../types';
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, app } from 'electron';
 import fs from 'fs';
+import path from 'path';
 import crypto from 'crypto';
 
 /**
@@ -455,16 +456,50 @@ export class SupabaseDaemon {
         printer_name: job.printer_name || settings.defaultPrinter || undefined
       };
 
-      // 6. Execute native printing
-      const printResult = await this.printer.printJob(finalJob, preparedPdfPath);
+      // 6. Check if no physical printer is installed
+      const noPrinters = await this.printer.isNoPrinterInstalled();
 
-      if (printResult.success) {
-        // 7. Update status to completed
+      if (noPrinters) {
+        this.logger.log('info', '[Virtual Print] No physical printer found. Operating in Virtual Print Mode.');
+        
+        // Save to Documents/PrintFlow/Test Prints/
+        const documentsPath = app.getPath('documents');
+        const targetDir = path.join(documentsPath, 'PrintFlow', 'Test Prints');
+        if (!fs.existsSync(targetDir)) {
+          fs.mkdirSync(targetDir, { recursive: true });
+        }
+
+        const originalName = (job as any).file_name || 'print_job.pdf';
+        const baseName = path.parse(originalName).name;
+        const targetFileName = `${baseName}_${job.id.substring(0, 8)}.pdf`;
+        const targetFilePath = path.join(targetDir, targetFileName);
+
+        // Copy the prepared pdf
+        fs.copyFileSync(preparedPdfPath, targetFilePath);
+
+        // 3. Create a log entry
+        this.logger.log('info', `[Virtual Print] Saved file to virtual prints directory: ${targetFilePath}`);
+        
+        // 4. Mark job as completed in DB
         await this.updateJobStatusInDb(job.id, 'completed');
-        this.logger.log('info', `Successfully printed job ${job.id}`);
-        this.notifyRenderer('job:status-updated', { jobId: job.id, status: 'completed' });
+        
+        // 5. Display: Virtual Print Completed
+        this.logger.log('info', 'Virtual Print Completed');
+
+        // Notify renderer with isVirtual flag so UI knows to show beautiful notification
+        this.notifyRenderer('job:status-updated', { jobId: job.id, status: 'completed', isVirtual: true });
       } else {
-        throw new Error(printResult.error || 'Unknown native print error');
+        // 6. Execute native printing
+        const printResult = await this.printer.printJob(finalJob, preparedPdfPath);
+
+        if (printResult.success) {
+          // 7. Update status to completed
+          await this.updateJobStatusInDb(job.id, 'completed');
+          this.logger.log('info', `Successfully printed job ${job.id}`);
+          this.notifyRenderer('job:status-updated', { jobId: job.id, status: 'completed' });
+        } else {
+          throw new Error(printResult.error || 'Unknown native print error');
+        }
       }
 
     } catch (err) {

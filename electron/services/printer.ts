@@ -57,6 +57,23 @@ export class PrinterService {
   }
 
   /**
+   * Checks if no physical/OS printer is installed on the system
+   */
+  public async isNoPrinterInstalled(): Promise<boolean> {
+    try {
+      let list: any[] = [];
+      try {
+        list = await pdfToPrinter.getPrinters();
+      } catch (e) {
+        list = [];
+      }
+      return !list || list.length === 0;
+    } catch (err) {
+      return true;
+    }
+  }
+
+  /**
    * Downloads a file from a URL to a temporary local path
    */
   public async downloadFile(url: string, fileExtension: string): Promise<string> {

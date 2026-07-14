@@ -24,6 +24,8 @@ interface ElectronContextType {
   minimizeWindow: () => void;
   closeWindow: () => void;
   simulateIncomingJob: (job: Partial<PrintJob>) => void;
+  virtualPrintCompleted: boolean;
+  resetVirtualPrint: () => void;
 }
 
 const defaultSettings: AppSettings = {
@@ -59,6 +61,9 @@ export const ElectronProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [completedCount, setCompletedCount] = useState(0);
   const [failedCount, setFailedCount] = useState(0);
   const [lastSyncTime, setLastSyncTime] = useState('Never');
+
+  const [virtualPrintCompleted, setVirtualPrintCompleted] = useState(false);
+  const resetVirtualPrint = useCallback(() => setVirtualPrintCompleted(false), []);
 
   const [supabaseClient, setSupabaseClient] = useState<SupabaseClient | null>(null);
 
@@ -262,11 +267,16 @@ export const ElectronProvider: React.FC<{ children: ReactNode }> = ({ children }
         addSimulatedLog('info', `Daemon started processing job ${job.id}`, `Url: ${job.file_url}`);
       };
 
-      const handleJobStatusUpdated = (_event: any, data: { jobId: string; status: PrintJob['status']; error?: string }) => {
+      const handleJobStatusUpdated = (_event: any, data: { jobId: string; status: PrintJob['status']; error?: string; isVirtual?: boolean }) => {
         if (data.status === 'completed') {
           setCompletedCount(prev => prev + 1);
           setActiveJob(null);
-          addSimulatedLog('info', `Print job ${data.jobId} completed successfully`);
+          if (data.isVirtual) {
+            setVirtualPrintCompleted(true);
+            addSimulatedLog('info', 'Virtual Print Completed');
+          } else {
+            addSimulatedLog('info', `Print job ${data.jobId} completed successfully`);
+          }
         } else if (data.status === 'failed') {
           setFailedCount(prev => prev + 1);
           setActiveJob(null);
@@ -338,7 +348,16 @@ export const ElectronProvider: React.FC<{ children: ReactNode }> = ({ children }
       setCompletedCount(prev => prev + 1);
       setActiveJob(null);
       setLastSyncTime(new Date().toLocaleTimeString());
-      addSimulatedLog('info', `[PRINT ENGINE] Job ${job.id} dispatched to system print spooler successfully!`);
+
+      const noPrinters = printers.length === 0;
+      if (noPrinters) {
+        setVirtualPrintCompleted(true);
+        addSimulatedLog('info', '[Virtual Print] No physical printer found. Operating in Virtual Print Mode.');
+        addSimulatedLog('info', '[Virtual Print] Saved file to virtual prints directory: Documents/PrintFlow/Test Prints/');
+        addSimulatedLog('info', 'Virtual Print Completed');
+      } else {
+        addSimulatedLog('info', `[PRINT ENGINE] Job ${job.id} dispatched to system print spooler successfully!`);
+      }
 
     } catch (e) {
       addSimulatedLog('error', `[PRINT ENGINE] Failed processing print pipeline`, String(e));
@@ -691,6 +710,8 @@ export const ElectronProvider: React.FC<{ children: ReactNode }> = ({ children }
         minimizeWindow,
         closeWindow,
         simulateIncomingJob,
+        virtualPrintCompleted,
+        resetVirtualPrint,
       }}
     >
       {children}

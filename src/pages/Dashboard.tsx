@@ -34,7 +34,9 @@ export const Dashboard: React.FC = () => {
     openLogsFolder,
     simulateIncomingJob,
     toggleAutoLaunch,
-    closeWindow
+    closeWindow,
+    virtualPrintCompleted,
+    resetVirtualPrint
   } = useElectron();
 
   // Settings & Logs Overlays State
@@ -92,6 +94,14 @@ export const Dashboard: React.FC = () => {
     const interval = setInterval(fetchPendingJobsCount, 8000);
     return () => clearInterval(interval);
   }, [settings.shopId, activeJob, completedCount]);
+
+  // Monitor virtual print completed trigger
+  useEffect(() => {
+    if (virtualPrintCompleted) {
+      showTemporaryFeedback('Virtual Print Completed');
+      resetVirtualPrint();
+    }
+  }, [virtualPrintCompleted, resetVirtualPrint]);
 
   // Action: Reconnect
   const handleReconnect = async () => {
