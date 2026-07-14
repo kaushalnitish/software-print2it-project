@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, Tray, Menu, shell } from 'electron';
 import path from 'path';
 import fs from 'fs';
+import http from 'http';
 import AutoLaunch from 'auto-launch';
 import dotenv from 'dotenv';
 
@@ -71,6 +72,33 @@ if (!gotTheLock) {
   });
 }
 
+function waitForViteServer(url: string, callback: () => void) {
+  logger.log('info', `Waiting for Vite development server at ${url}...`);
+  console.log(`Waiting for Vite development server at ${url}...`);
+  
+  const check = () => {
+    const req = http.get(url, (res) => {
+      logger.log('info', `Vite server status check: ${res.statusCode}`);
+      console.log(`Vite server status check: ${res.statusCode}`);
+      if (res.statusCode === 200) {
+        callback();
+      } else {
+        setTimeout(check, 500);
+      }
+    });
+    
+    req.on('error', (err) => {
+      logger.log('info', `Vite server not ready yet (error: ${err.message}), retrying...`);
+      console.log(`Vite server not ready yet (error: ${err.message}), retrying...`);
+      setTimeout(check, 500);
+    });
+    
+    req.end();
+  };
+  
+  check();
+}
+
 function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 430,
@@ -92,11 +120,50 @@ function createMainWindow() {
   // Link window to supabase daemon
   daemon.setWindow(mainWindow);
 
+  // Monitor webContents events
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+    logger.log('error', `did-fail-load event: errorCode=${errorCode}, errorDescription=${errorDescription}, validatedURL=${validatedURL}`);
+    console.error(`did-fail-load event: errorCode=${errorCode}, errorDescription=${errorDescription}, validatedURL=${validatedURL}`);
+  });
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    logger.log('info', 'did-finish-load event fired successfully');
+    console.log('did-finish-load event fired successfully');
+    // Open DevTools automatically after the renderer loads
+    mainWindow?.webContents.openDevTools({ mode: 'detach' });
+  });
+
+  mainWindow.webContents.on('dom-ready', () => {
+    logger.log('info', 'dom-ready event fired');
+    console.log('dom-ready event fired');
+  });
+
+  mainWindow.webContents.on('render-process-gone', (event, details) => {
+    logger.log('error', `render-process-gone event: reason=${details.reason}, exitCode=${details.exitCode}`);
+    console.error(`render-process-gone event: reason=${details.reason}, exitCode=${details.exitCode}`);
+  });
+
+  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    const levelStr = ['verbose', 'info', 'warning', 'error'][level] || 'unknown';
+    logger.log('info', `Renderer Console [${levelStr}]: ${message} (at ${sourceId}:${line})`);
+    console.log(`Renderer Console [${levelStr}]: ${message} (at ${sourceId}:${line})`);
+  });
+
   // Serve content: Dev server or production files
   if (process.env.NODE_ENV === 'development' || !app.isPackaged) {
-    mainWindow.loadURL('http://localhost:3000');
-    // Open devtools in development
-    mainWindow.webContents.openDevTools({ mode: 'detach' });
+    const devUrl = 'http://localhost:3000';
+    waitForViteServer(devUrl, () => {
+      if (!mainWindow) return;
+      logger.log('info', `Calling loadURL with ${devUrl}...`);
+      console.log(`Calling loadURL with ${devUrl}...`);
+      mainWindow.loadURL(devUrl).then(() => {
+        logger.log('info', `loadURL completed for ${devUrl}`);
+        console.log(`loadURL completed for ${devUrl}`);
+      }).catch((err) => {
+        logger.log('error', `loadURL failed for ${devUrl}: ${String(err)}`);
+        console.error(`loadURL failed for ${devUrl}:`, err);
+      });
+    });
   } else {
     mainWindow.loadFile(path.join(__dirname, '../../dist/index.html'));
   }
