@@ -90,7 +90,8 @@ class StorageService {
   private store: any;
 
   constructor() {
-    this.store = new Store<AppSettings>({
+    const StoreClass: any = (Store as any).default || Store;
+    this.store = new StoreClass({
       name: 'printflow_config',
       // Ensure the store schema is validated
       schema: schema as any,

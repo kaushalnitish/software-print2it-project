@@ -82,7 +82,7 @@ function createMainWindow() {
     transparent: false,
     backgroundColor: '#0c0f17', // Match dark slate dashboard
     webPreferences: {
-      preload: path.join(__dirname, '../preload/index.js'),
+      preload: path.join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,

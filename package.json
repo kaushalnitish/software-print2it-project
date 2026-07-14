@@ -3,10 +3,10 @@
   "private": true,
   "version": "2.0.0",
   "type": "module",
-  "main": "electron/dist/main/index.js",
+  "main": "electron/dist/main/index.cjs",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
-    "build": "vite build && tsc -p tsconfig.electron.json",
+    "build": "vite build && esbuild electron/main/index.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=electron/dist/main/index.cjs && esbuild electron/preload/index.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=electron/dist/preload/index.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist electron/dist release",
     "lint": "tsc --noEmit",
